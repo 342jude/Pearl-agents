@@ -1,0 +1,29 @@
+name: Daily Bias
+
+on:
+  schedule:
+    - cron: '0 3,9,14,18 * * 1-5'   # 4x/day on weekdays, UTC (Asia / London / NY-AM / NY-PM)
+  workflow_dispatch: {}              # lets you run it manually from the Actions tab
+
+concurrency:
+  group: daily-bias
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run Daily Bias
+        run: python daily_bias.py
+        env:
+          WP_BASE: ${{ secrets.WP_BASE }}
+          WP_USER: ${{ secrets.WP_USER }}
+          WP_APP_PASS: ${{ secrets.WP_APP_PASS }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_MODEL: ${{ secrets.ANTHROPIC_MODEL }}
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}

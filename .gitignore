@@ -1,0 +1,5 @@
+node_modules/
+*.txt
+.env
+fred_key.txt
+anthropic_key.txt

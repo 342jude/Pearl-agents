@@ -1,0 +1,10 @@
+{
+  "name": "pearl-agents",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Pearl of Trades autonomous agents — News Desk (runs on GitHub Actions cron).",
+  "dependencies": {
+    "rss-parser": "^3.13.0"
+  }
+}
