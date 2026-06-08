@@ -108,9 +108,8 @@ function routeTargets(item) {
       if (!done.has(zone)) { done.add(zone); t.push({ page: pid, zone, mode: "prepend", cap: 4, style: "compact" }); }
     }
   }
-  // fan-out: sector hubs (compact)
-  if (item.sector === "software") t.push({ page: 1195, zone: "software-pulse", mode: "prepend", cap: 4, style: "compact" });
-  if (item.sector === "prop") t.push({ page: 881, zone: "propfirm-news-industry", mode: "prepend", cap: 4, style: "compact" });
+  // (prop-firm & software hubs intentionally get NO news fan-out - those pages focus on reviews.
+  //  General market news still flows to the calendar, market pages, brief and homepage below.)
   // general "latest futures" pulses: homepage (Elementor), markets hub, daily brief
   t.push({ page: 454, zone: "market-pulse", mode: "prepend", cap: 5, style: "compact" });
   t.push({ page: 445, zone: "daily-brief-pulse", mode: "prepend", cap: 5, style: "compact" });
