@@ -6,6 +6,7 @@ Two self-running agents for **pearloftrades.com**, scheduled free on GitHub Acti
 |---|---|---|---|
 | **News Desk** | Pulls futures-news RSS, Claude Haiku tags + rewrites in plain English, files to the Economic Calendar, deep-links, pings Slack | every 3 hours | `news_desk.js` (Node) |
 | **Daily Bias** | Pulls free OHLCV → desk read (6 contracts) + "Markets now" strip + event radar (FRED-live) + archive, writes the Daily Brief | 4×/day, weekdays | `daily_bias.py` (Python) |
+| **Watcher** | Health-checks every prop-firm & software review page's outbound link → flags dead/closed/broken/moved links to Slack (read-only) | weekly (Mon) | `watcher.py` (Python) |
 
 ---
 
