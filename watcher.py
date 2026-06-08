@@ -13,9 +13,13 @@ WPH={'Authorization':AUTH,'User-Agent':'Mozilla/5.0'}
 SLACK=os.environ.get('SLACK_WATCH_WEBHOOK_URL') or os.environ.get('SLACK_BIAS_WEBHOOK_URL') or os.environ.get('SLACK_WEBHOOK_URL')
 UA='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36'
 # domains that are never the firm/tool's own site (social, aggregators, infra)
-SKIP=('pearloftrades.com','w3.org','schema.org','googleapis','gstatic','gravatar','wordpress.org',
+SKIP=('pearloftrades.com','w3.org','schema.org','googleapis.com','gstatic.com','gravatar.com','wordpress.org',
       'twitter.com','x.com','facebook.com','instagram.com','youtube.com','youtu.be','linkedin.com',
       't.me','discord.gg','discord.com','trustpilot.com','reddit.com','tiktok.com')
+def is_skip(host):
+    host=host.lower()
+    if host.startswith('www.'): host=host[4:]
+    return any(host==s or host.endswith('.'+s) for s in SKIP)   # exact-domain match, not substring
 
 def wp(path):
     return json.loads(urllib.request.urlopen(urllib.request.Request(BASE+path,headers=WPH),timeout=30).read())
@@ -43,8 +47,7 @@ for pid,link,sec,name in reviews:
         html=wp('/wp-json/wp/v2/pages/%d?context=edit&_fields=content'%pid)['content']['raw']
         primary=None
         for u in re.findall(r'href="(https?://[^"]+)"',html):
-            host=urlparse(u).netloc.lower()
-            if any(s in host for s in SKIP): continue
+            if is_skip(urlparse(u).netloc): continue
             primary=u; break
         targets.append((pid,link,sec,name,primary))
     except Exception as e:
