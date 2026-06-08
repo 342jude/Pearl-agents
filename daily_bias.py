@@ -228,6 +228,17 @@ def handler(pd: "pipedream"):
     for url in [BASE+'/wp-json/elementor/v1/cache',BASE+'/wp-admin/admin.php?page=litespeed&action=purge_all']:
         try: urllib.request.urlopen(urllib.request.Request(url,headers=WPH,method='DELETE' if 'elementor' in url else 'GET'),timeout=15).read()
         except: pass
+    # optional Slack ping - uses a dedicated bias webhook if set, else the shared news webhook
+    hook=os.environ.get('SLACK_BIAS_WEBHOOK_URL') or os.environ.get('SLACK_WEBHOOK_URL')
+    if hook and rows:
+        AR={'Bullish':'\U0001F7E2','Bearish':'\U0001F534','Neutral':'\U0001F7E1'}
+        line=' · '.join('%s %s'%(AR.get((R.get(r['sym'],{}).get('direction','Neutral')).split()[0],'\U0001F7E1'),r['sym']) for r in rows)
+        rdr=', '.join(c[2] for c in cand) or 'clear'
+        msg=('*Pearl Daily Bias — %s*\n%s\n\U0001F4C5 On the radar: %s\n%s/daily-futures-brief/'%(SESS,line,rdr,BASE))
+        try:
+            hb=urllib.request.Request(hook,data=json.dumps({'text':msg}).encode(),headers={'content-type':'application/json'},method='POST')
+            urllib.request.urlopen(hb,timeout=15).read()
+        except Exception as e: print('slack skip',e)
     radar_txt=('STALE - refresh the %d event schedule!'%YEAR) if STALE else (', '.join(c[2] for c in cand) or 'none')
     summary='%sDaily Bias (%s): %d cards | radar: %s'%(('⚠️ ' if STALE else ''),SESS,len(rows),radar_txt)
     print(summary); return summary
