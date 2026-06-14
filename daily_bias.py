@@ -7,7 +7,7 @@
 # Env vars: ANTHROPIC_API_KEY, ANTHROPIC_MODEL, WP_BASE, WP_USER, WP_APP_PASS.
 
 def handler(pd: "pipedream"):
-    import urllib.request, json, html, os, base64
+    import urllib.request, json, html, os, base64, re
     from datetime import datetime, date, timedelta, timezone, tzinfo
     KEY=os.environ["ANTHROPIC_API_KEY"]; MODEL=os.environ.get("ANTHROPIC_MODEL","claude-haiku-4-5-20251001")
     BASE=os.environ["WP_BASE"]; AUTH="Basic "+base64.b64encode(("%s:%s"%(os.environ["WP_USER"],os.environ["WP_APP_PASS"])).encode()).decode()
@@ -28,6 +28,15 @@ def handler(pd: "pipedream"):
         u='https://query1.finance.yahoo.com/v8/finance/chart/%s?range=%s&interval=%s'%(sym,rng,interval)
         d=json.loads(urllib.request.urlopen(urllib.request.Request(u,headers={'User-Agent':'Mozilla/5.0'}),timeout=15).read())
         return d['chart']['result'][0]['indicators']['quote'][0]
+    def pullq(sym,interval,rng):
+        u='https://query1.finance.yahoo.com/v8/finance/chart/%s?range=%s&interval=%s'%(sym,rng,interval)
+        d=json.loads(urllib.request.urlopen(urllib.request.Request(u,headers={'User-Agent':'Mozilla/5.0'}),timeout=15).read())
+        r=d['chart']['result'][0]; return r['indicators']['quote'][0], (r.get('timestamp') or [])
+    def novwapnum(s):
+        # safety net: never let a VWAP price number through (anchor/feed dependent -> would be wrong)
+        s=re.sub(r'[\$]?\d[\d,]*(?:\.\d+)?\s*(?:area\s*)?(?=VWAP\b)','',s)
+        s=re.sub(r'\bVWAP\b(\s*(?:at|near|around|of|@))?\s*[\$]?\d[\d,]*(?:\.\d+)?','VWAP',s)
+        return s
     def ema(a,p):
         k=2/(p+1); e=a[0]; out=[e]
         for x in a[1:]: e=x*k+e*(1-k); out.append(e)
@@ -38,6 +47,10 @@ def handler(pd: "pipedream"):
     CON=[('ES','S&P 500','ES=F','/markets/es-futures/',0),('NQ','Nasdaq 100','NQ=F','/markets/nq-futures/',0),
          ('GC','Gold','GC=F','/markets/gold-futures/',1),('CL','Crude (WTI)','CL=F','/markets/crude-oil-futures/',2),
          ('6E','Euro FX','6E=F','/markets/euro-fx-futures/',4),('BTC','Bitcoin','BTC=F','/markets/bitcoin-futures/',0)]
+    # session VWAP anchor: most recent 18:00 ET futures session open (TradingView's default anchor)
+    _nE=datetime.now(ET); _an=_nE.replace(hour=18,minute=0,second=0,microsecond=0)
+    if _nE.hour<18: _an=_an-timedelta(days=1)
+    VANCH=_an.timestamp()
     rows=[]
     for sym,sub,yf,href,dp in CON:
         try:
@@ -46,14 +59,18 @@ def handler(pd: "pipedream"):
             qd=pull(yf,'1d','5d'); H=qd['high'][-2]; L=qd['low'][-2]; C=qd['close'][-2]; pp=(H+L+C)/3
             macd=[a-b for a,b in zip(ema(cl,12),ema(cl,26))]; sig=ema(macd,9)
             mom='positive' if macd[-1]>sig[-1] else 'negative'; trend='higher' if cl[-1]>cl[-14] else 'lower'
-            q2=pull(yf,'30m','5d'); tp=0; vv=0
-            for kk in range(1,14):
+            q2,ts2=pullq(yf,'30m','5d'); tp=0; vv=0
+            for i in range(len(ts2)):
+                t=ts2[i]
+                if t is None or t<VANCH: continue
                 try:
-                    cc=q2['close'][-kk]; vv2=q2['volume'][-kk]
-                    if cc and vv2: tp+=((q2['high'][-kk]+q2['low'][-kk]+cc)/3)*vv2; vv+=vv2
+                    cc=q2['close'][i]; vv2=q2['volume'][i]; hi=q2['high'][i]; lo=q2['low'][i]
+                    if cc and vv2 and hi is not None and lo is not None:
+                        tp+=((hi+lo+cc)/3)*vv2; vv+=vv2
                 except: pass
             vwap=(tp/vv) if vv else pp
-            rows.append(dict(sym=sym,sub=sub,href=href,dp=dp,pp=pp,H=H,L=L,vwap=vwap,mom=mom,trend=trend,last=cl[-1],prev=C))
+            vstate='below' if cl[-1]<vwap else 'above'   # published as STATE only, never the number
+            rows.append(dict(sym=sym,sub=sub,href=href,dp=dp,pp=pp,H=H,L=L,vwap=vwap,vstate=vstate,mom=mom,trend=trend,last=cl[-1],prev=C))
         except Exception as e: print('skip',sym,e)
 
     hU=datetime.now(timezone.utc).hour
@@ -61,10 +78,11 @@ def handler(pd: "pipedream"):
     read_inner=None
     if rows:
         items=[{'symbol':r['sym'],'pivot':f(r['pp'],r['dp']),'resistance':f(r['H'],r['dp']),'support':f(r['L'],r['dp']),
-                'sessionVWAP':f(r['vwap'],r['dp']),'1h_MACD':r['mom'],'1h_structure':'making %s highs/lows'%r['trend']} for r in rows]
+                'vs_session_VWAP':'price is currently %s session VWAP'%r['vstate'],'1h_MACD':r['mom'],'1h_structure':'making %s highs/lows'%r['trend']} for r in rows]
         SYS=('You are the Pearl of Trades futures desk writing the %s read across the desk (ES, NQ, gold, crude, euro, bitcoin). '
-         'You blend FUNDAMENTAL drivers with the TECHNICAL picture (fixed daily pivot/resistance/support, session VWAP, 1h MACD, 1h structure). '
-         'CRITICAL: conditional rules around the FIXED levels only - never the live price or "X points away".\n'
+         'You blend FUNDAMENTAL drivers with the TECHNICAL picture (fixed daily pivot/resistance/support WITH numbers, plus a session-VWAP STATE, 1h MACD, 1h structure). '
+         'CRITICAL: conditional rules around the FIXED numeric levels (pivot/support/resistance) only - never the live price or "X points away". '
+         'VWAP RULE: you are told only whether price is ABOVE or BELOW session VWAP. Refer to VWAP ONLY as "above VWAP"/"below VWAP" - NEVER write a VWAP price number (it is anchor- and feed-dependent and would be wrong on the trader chart).\n'
          'Return STRICT JSON {"market_context":"...","items":[{"symbol","direction","driver","read","flip"}]}:\n'
          '- market_context: 2 sentences on the macro backdrop driving the whole desk today (the fundamental picture).\n'
          '- direction: "Bullish lean" | "Bearish lean" | "Neutral".\n'
@@ -81,7 +99,8 @@ def handler(pd: "pipedream"):
         def card(r):
             x=R.get(r['sym'],{}); dn=x.get('direction','Neutral'); col,bg,ar=CFG.get(dn.split()[0],CFG['Neutral'])
             def Lc(lbl,val): return '<span style="white-space:nowrap;"><span style="color:#9AA6B6;">%s</span> <b style="color:#0B1F3A;">%s</b></span>'%(lbl,val)
-            rail=' &nbsp;&middot;&nbsp; '.join([Lc('S',f(r['L'],r['dp'])),Lc('Pivot',f(r['pp'],r['dp'])),Lc('VWAP',f(r['vwap'],r['dp'])),Lc('R',f(r['H'],r['dp']))])
+            vchip=('&#9660;&nbsp;below' if r['vstate']=='below' else '&#9650;&nbsp;above')
+            rail=' &nbsp;&middot;&nbsp; '.join([Lc('S',f(r['L'],r['dp'])),Lc('Pivot',f(r['pp'],r['dp'])),Lc('R',f(r['H'],r['dp'])),Lc('VWAP',vchip)])
             return ('<div style="border:1px solid #E7EBF1;border-radius:14px;background:#fff;overflow:hidden;box-shadow:0 12px 30px rgba(7,26,47,.06);">'
               '<div style="height:4px;background:%s;"></div>'
               '<div style="padding:17px;display:flex;flex-direction:column;gap:11px;">'
@@ -91,7 +110,7 @@ def handler(pd: "pipedream"):
                 '<div style="font-size:12.5px;color:#42526E;padding:9px 12px;background:#F6F8FB;border-radius:9px;display:flex;flex-wrap:wrap;gap:4px 0;">%s</div>'
                 '<div style="font-size:14px;color:#2A3950;line-height:1.6;">%s</div>'
                 '<div style="font-size:12.5px;color:#42526E;background:%s;border-radius:9px;padding:9px 12px;line-height:1.55;"><span style="font-weight:900;color:%s;">&#9873; Bias flips if &middot;</span> %s</div>'
-              '</div></div>')%(col,r['sym'],r['sub'],col,bg,ar,dn.replace(' lean',''),html.escape(x.get('driver','')),rail,html.escape(x.get('read','')),bg,col,html.escape(x.get('flip','')))
+              '</div></div>')%(col,r['sym'],r['sub'],col,bg,ar,dn.replace(' lean',''),html.escape(x.get('driver','')),rail,html.escape(novwapnum(x.get('read',''))),bg,col,html.escape(novwapnum(x.get('flip',''))))
 
         nowET=datetime.now(ET); stamp='%s, %d:%02d ET'%(nowET.strftime('%b %d'),(nowET.hour%12) or 12,nowET.minute)
         ctxb=('<div style="grid-column:1/-1;padding:17px 19px;border-radius:13px;background:linear-gradient(135deg,#0B1F3A,#16315A);box-shadow:0 14px 34px rgba(7,26,47,.14);">'
