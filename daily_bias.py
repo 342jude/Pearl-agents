@@ -89,24 +89,27 @@ def handler(pd: "pipedream"):
                 'price_vs_prev_levels':_pos(r),
                 'vs_session_VWAP':'price is currently %s session VWAP'%r['vstate']} for r in rows]
         SYS=('You are the Pearl of Trades futures desk writing the %s read across the desk (ES, NQ, gold, crude, euro, bitcoin). '
-         'You blend FUNDAMENTAL drivers with key TECHNICAL reference points (prev-session High/Low/Pivot and session-VWAP state).\n'
-         'CRITICAL RULES — read carefully:\n'
+         'Your job: a clean FUNDAMENTAL read blended with the VWAP state. No specific price numbers in the narrative.\n'
+         'CRITICAL RULES:\n'
          '1. DIRECTION must follow price_vs_prev_levels. '
          '"above resistance" = Bullish lean. '
          '"above pivot, below resistance" = Neutral or Bullish lean. '
          '"below pivot, above support" = Neutral or Bearish lean. '
-         '"below support" = Bearish lean. '
-         'Do NOT override this with macro narrative alone.\n'
-         '2. NEVER name any indicator (MACD, RSI, stochastic, etc.) — you do not have live chart data and citing them would mislead traders.\n'
-         '3. Write CONDITIONAL rules: "while price holds above X, bias favours Y" or "a break below X opens Z". Never state the current price as a number.\n'
-         '4. VWAP: you know only ABOVE or BELOW. Write "above VWAP" / "below VWAP" — never a VWAP price number.\n'
-         '5. Levels are prev-session H/L/Pivot — make it clear in the read these are reference points, not live signals.\n'
+         '"below support" = Bearish lean. Do NOT override this with macro alone.\n'
+         '2. NEVER write any specific price number in the read or flip. No "7486", no "above X". The levels shown in the header are reference-only and may not match the trader\'s chart.\n'
+         '3. NEVER name any indicator (MACD, RSI, stochastic, etc.).\n'
+         '4. VWAP: write "above VWAP" or "below VWAP" only — never a price number.\n'
+         '5. Write about the MACRO DRIVER and the VWAP/price-position interplay. Conditions like "while buyers hold above session VWAP" or "a close back below VWAP would flip the lean".\n'
          'Return STRICT JSON {"market_context":"...","items":[{"symbol","direction","driver","read","flip"}]}:\n'
          '- market_context: 2 sentences on the macro backdrop driving the desk today.\n'
-         '- direction: "Bullish lean" | "Bearish lean" | "Neutral" — must match price_vs_prev_levels above.\n'
+         '- direction: "Bullish lean" | "Bearish lean" | "Neutral" — must match price_vs_prev_levels.\n'
          '- driver: 3-7 word fundamental driver.\n'
-         '- read: 1-2 sentences blending the driver with level-based conditions (e.g. "Easing data lifted risk appetite; with price holding above the 7486 prev pivot and VWAP, buyers stay in control while that level holds as support.").\n'
-         '- flip: plain English of what would flip the bias — no jargon, never use the word "invalidation".\n'
+         '- read: 1-2 sentences. Blend the macro driver with the VWAP state and general directional posture. No price numbers. '
+         'Example: "Soft landing hopes lifted risk; with price above VWAP, buyers are in control — but profit-taking is likely into any gap-fill attempt." '
+         'Example: "Yield pressure continues; while price sits below VWAP, sellers hold the initiative into the London close."\n'
+         '- flip: 1 sentence, plain English, no price numbers, no word "invalidation". '
+         'Example: "A sustained move back below VWAP would shift the lean to neutral." '
+         'Example: "A hold above VWAP into the NY open would confirm the bullish lean."\n'
          'Output JSON only.')%SESS
         body=json.dumps({'model':MODEL,'max_tokens':2400,'system':SYS,'messages':[{'role':'user','content':json.dumps({'items':items})}]}).encode()
         rq=urllib.request.Request('https://api.anthropic.com/v1/messages',data=body,headers={'x-api-key':KEY,'anthropic-version':'2023-06-01','content-type':'application/json'})
@@ -118,8 +121,7 @@ def handler(pd: "pipedream"):
             x=R.get(r['sym'],{}); dn=x.get('direction','Neutral'); col,bg,ar=CFG.get(dn.split()[0],CFG['Neutral'])
             def Lc(lbl,val): return '<span style="white-space:nowrap;"><span style="color:#9AA6B6;">%s</span> <b style="color:#0B1F3A;">%s</b></span>'%(lbl,val)
             vchip=('&#9660;&nbsp;below' if r['vstate']=='below' else '&#9650;&nbsp;above')
-            rail=(' &nbsp;&middot;&nbsp; '.join([Lc('Prev S',f(r['L'],r['dp'])),Lc('Prev Pivot',f(r['pp'],r['dp'])),Lc('Prev R',f(r['H'],r['dp'])),Lc('VWAP',vchip)])
-                  +'<span style="display:block;font-size:10px;color:#9AA6B6;margin-top:3px;">Prev session H/L/Pivot &mdash; compare against your live chart before trading</span>')
+            rail=Lc('VWAP',vchip)+'<span style="display:block;font-size:10px;color:#9AA6B6;margin-top:3px;">Session VWAP state only &mdash; use your live chart for S/R levels</span>'
             return ('<div style="border:1px solid #E7EBF1;border-radius:14px;background:#fff;overflow:hidden;box-shadow:0 12px 30px rgba(7,26,47,.06);">'
               '<div style="height:4px;background:%s;"></div>'
               '<div style="padding:17px;display:flex;flex-direction:column;gap:11px;">'
