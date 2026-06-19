@@ -77,18 +77,36 @@ def handler(pd: "pipedream"):
     SESS=('Asia session' if (hU>=22 or hU<7) else 'London session' if hU<12 else 'NY morning' if hU<16 else 'NY afternoon')
     read_inner=None
     if rows:
-        items=[{'symbol':r['sym'],'pivot':f(r['pp'],r['dp']),'resistance':f(r['H'],r['dp']),'support':f(r['L'],r['dp']),
-                'vs_session_VWAP':'price is currently %s session VWAP'%r['vstate'],'1h_MACD':r['mom'],'1h_structure':'making %s highs/lows'%r['trend']} for r in rows]
+        def _pos(r):
+            if r['last']>r['H']: return 'above resistance (%s)'%f(r['H'],r['dp'])
+            if r['last']>r['pp']: return 'above pivot (%s), below resistance (%s)'%(f(r['pp'],r['dp']),f(r['H'],r['dp']))
+            if r['last']>r['L']: return 'below pivot (%s), above support (%s)'%(f(r['pp'],r['dp']),f(r['L'],r['dp']))
+            return 'below support (%s)'%f(r['L'],r['dp'])
+        items=[{'symbol':r['sym'],
+                'prev_session_pivot':f(r['pp'],r['dp']),
+                'prev_session_resistance':f(r['H'],r['dp']),
+                'prev_session_support':f(r['L'],r['dp']),
+                'price_vs_prev_levels':_pos(r),
+                'vs_session_VWAP':'price is currently %s session VWAP'%r['vstate']} for r in rows]
         SYS=('You are the Pearl of Trades futures desk writing the %s read across the desk (ES, NQ, gold, crude, euro, bitcoin). '
-         'You blend FUNDAMENTAL drivers with the TECHNICAL picture (fixed daily pivot/resistance/support WITH numbers, plus a session-VWAP STATE, 1h MACD, 1h structure). '
-         'CRITICAL: conditional rules around the FIXED numeric levels (pivot/support/resistance) only - never the live price or "X points away". '
-         'VWAP RULE: you are told only whether price is ABOVE or BELOW session VWAP. Refer to VWAP ONLY as "above VWAP"/"below VWAP" - NEVER write a VWAP price number (it is anchor- and feed-dependent and would be wrong on the trader chart).\n'
+         'You blend FUNDAMENTAL drivers with key TECHNICAL reference points (prev-session High/Low/Pivot and session-VWAP state).\n'
+         'CRITICAL RULES — read carefully:\n'
+         '1. DIRECTION must follow price_vs_prev_levels. '
+         '"above resistance" = Bullish lean. '
+         '"above pivot, below resistance" = Neutral or Bullish lean. '
+         '"below pivot, above support" = Neutral or Bearish lean. '
+         '"below support" = Bearish lean. '
+         'Do NOT override this with macro narrative alone.\n'
+         '2. NEVER name any indicator (MACD, RSI, stochastic, etc.) — you do not have live chart data and citing them would mislead traders.\n'
+         '3. Write CONDITIONAL rules: "while price holds above X, bias favours Y" or "a break below X opens Z". Never state the current price as a number.\n'
+         '4. VWAP: you know only ABOVE or BELOW. Write "above VWAP" / "below VWAP" — never a VWAP price number.\n'
+         '5. Levels are prev-session H/L/Pivot — make it clear in the read these are reference points, not live signals.\n'
          'Return STRICT JSON {"market_context":"...","items":[{"symbol","direction","driver","read","flip"}]}:\n'
-         '- market_context: 2 sentences on the macro backdrop driving the whole desk today (the fundamental picture).\n'
-         '- direction: "Bullish lean" | "Bearish lean" | "Neutral".\n'
-         '- driver: 3-7 word fundamental driver (e.g. "rising yields after a strong jobs report").\n'
-         '- read: 1-2 sentences BLENDING the fundamental driver with the technical levels, as conditional rules (e.g. "Hot jobs lifted yields; while it holds below the 7450 pivot and VWAP, sellers stay in control into 7591.").\n'
-         '- flip: PLAIN ENGLISH of what would flip the bias - no jargon (e.g. "A hold back above the 7450 pivot would turn the lean neutral-to-up."). Do NOT use the word invalidation.\n'
+         '- market_context: 2 sentences on the macro backdrop driving the desk today.\n'
+         '- direction: "Bullish lean" | "Bearish lean" | "Neutral" — must match price_vs_prev_levels above.\n'
+         '- driver: 3-7 word fundamental driver.\n'
+         '- read: 1-2 sentences blending the driver with level-based conditions (e.g. "Easing data lifted risk appetite; with price holding above the 7486 prev pivot and VWAP, buyers stay in control while that level holds as support.").\n'
+         '- flip: plain English of what would flip the bias — no jargon, never use the word "invalidation".\n'
          'Output JSON only.')%SESS
         body=json.dumps({'model':MODEL,'max_tokens':2400,'system':SYS,'messages':[{'role':'user','content':json.dumps({'items':items})}]}).encode()
         rq=urllib.request.Request('https://api.anthropic.com/v1/messages',data=body,headers={'x-api-key':KEY,'anthropic-version':'2023-06-01','content-type':'application/json'})
@@ -100,7 +118,8 @@ def handler(pd: "pipedream"):
             x=R.get(r['sym'],{}); dn=x.get('direction','Neutral'); col,bg,ar=CFG.get(dn.split()[0],CFG['Neutral'])
             def Lc(lbl,val): return '<span style="white-space:nowrap;"><span style="color:#9AA6B6;">%s</span> <b style="color:#0B1F3A;">%s</b></span>'%(lbl,val)
             vchip=('&#9660;&nbsp;below' if r['vstate']=='below' else '&#9650;&nbsp;above')
-            rail=' &nbsp;&middot;&nbsp; '.join([Lc('S',f(r['L'],r['dp'])),Lc('Pivot',f(r['pp'],r['dp'])),Lc('R',f(r['H'],r['dp'])),Lc('VWAP',vchip)])
+            rail=(' &nbsp;&middot;&nbsp; '.join([Lc('Prev S',f(r['L'],r['dp'])),Lc('Prev Pivot',f(r['pp'],r['dp'])),Lc('Prev R',f(r['H'],r['dp'])),Lc('VWAP',vchip)])
+                  +'<span style="display:block;font-size:10px;color:#9AA6B6;margin-top:3px;">Prev session H/L/Pivot &mdash; compare against your live chart before trading</span>')
             return ('<div style="border:1px solid #E7EBF1;border-radius:14px;background:#fff;overflow:hidden;box-shadow:0 12px 30px rgba(7,26,47,.06);">'
               '<div style="height:4px;background:%s;"></div>'
               '<div style="padding:17px;display:flex;flex-direction:column;gap:11px;">'
@@ -116,7 +135,7 @@ def handler(pd: "pipedream"):
         ctxb=('<div style="grid-column:1/-1;padding:17px 19px;border-radius:13px;background:linear-gradient(135deg,#0B1F3A,#16315A);box-shadow:0 14px 34px rgba(7,26,47,.14);">'
          '<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:8px;"><span style="font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.05em;color:#F2C97A;">&#127757; Market context</span>'
          '<span style="font-size:11px;font-weight:800;color:#fff;background:rgba(255,255,255,.12);padding:3px 10px;border-radius:999px;">%s &middot; %s</span>'
-         '<span style="font-size:11px;color:#9FB4D0;">updates 4x/day &middot; daily/1h levels, not a live feed</span></div>'
+         '<span style="font-size:11px;color:#9FB4D0;">updates 4x/day &middot; prev-session H/L/Pivot &middot; verify against your live chart</span></div>'
          '<div style="font-size:14.5px;line-height:1.62;color:#EAF1F9;">%s</div></div>')%(SESS,stamp,html.escape(CTX))
         read_inner=ctxb+''.join(card(r) for r in rows)
         # hero live market strip (refreshes the dark hero's glass tiles)
