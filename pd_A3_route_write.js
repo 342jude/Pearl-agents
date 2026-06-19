@@ -163,31 +163,67 @@ export default defineComponent({
       posted.push({ id, headline: item.headline, importance: item.importance, source: item.source });
     }
 
+    // Recursively find the Elementor HTML widget containing a zone and update it.
+    function updateEdataZone(elements, zone, builder) {
+      const s = `<!--ZONE:${zone}-START-->`, e = `<!--ZONE:${zone}-END-->`;
+      for (const el of elements || []) {
+        if (el.settings && typeof el.settings.html === "string" && el.settings.html.includes(s)) {
+          const next = spliceZone(el.settings.html, zone, builder);
+          if (next) { el.settings.html = next; return true; }
+        }
+        if (el.elements && updateEdataZone(el.elements, zone, builder)) return true;
+      }
+      return false;
+    }
+
     for (const pageId of Object.keys(byPage)) {
       const r = await fetch(`${BASE}/wp-json/wp/v2/pages/${pageId}?context=edit`, { headers: { Authorization: AUTH } });
       const pg = await r.json();
-      const isElementor = String(pageId) === "43"; // homepage stores content in _elementor_data
-      let edata = null, html = "";
-      if (isElementor) {
-        try { edata = JSON.parse((pg.meta && pg.meta._elementor_data) || "[]"); html = edata[0].elements[0].settings.html || ""; } catch (e) { html = ""; }
+      const isHomepage = String(pageId) === "43";
+
+      // Detect Elementor pages (they have _elementor_data in meta)
+      let edata = null;
+      const edataRaw = pg.meta && pg.meta._elementor_data;
+      if (edataRaw && edataRaw.length > 10) {
+        try { edata = JSON.parse(edataRaw); } catch (e) {}
+      }
+
+      let html = "";
+      if (isHomepage && edata) {
+        try { html = edata[0].elements[0].settings.html || ""; } catch (e) { html = ""; }
       } else {
         html = (pg.content && pg.content.raw) || "";
       }
+
+      let edataUpdated = false;
       for (const { zone, mode, cap, item, style } of byPage[pageId]) {
         const row = style === "compact" ? renderRowCompact(item, item._id) : renderRow(item, item._id);
-        const next = spliceZone(html, zone, (inner) => {
-          if (mode === "replace") return row;
-          return mergeAndSort(row, inner, cap);
-        });
-        if (next) html = next;
+        const builder = (inner) => mode === "replace" ? row : mergeAndSort(row, inner, cap);
+
+        if (isHomepage && edata) {
+          // Homepage: zone lives at a known Elementor path
+          const next = spliceZone(html, zone, builder);
+          if (next) { html = next; edataUpdated = true; }
+        } else if (edata && updateEdataZone(edata, zone, builder)) {
+          // Other Elementor pages: found & updated the zone recursively
+          edataUpdated = true;
+        } else {
+          // Non-Elementor pages (Calendar, Daily Brief, etc.): update content.raw
+          const next = spliceZone(html, zone, builder);
+          if (next) html = next;
+        }
       }
+
       let body;
-      if (isElementor && edata) {
+      if (isHomepage && edata && edataUpdated) {
         edata[0].elements[0].settings.html = html;
+        body = JSON.stringify({ meta: { _elementor_data: JSON.stringify(edata) } });
+      } else if (edata && edataUpdated) {
         body = JSON.stringify({ meta: { _elementor_data: JSON.stringify(edata) } });
       } else {
         body = JSON.stringify({ content: html });
       }
+
       await fetch(`${BASE}/wp-json/wp/v2/pages/${pageId}`, {
         method: "POST",
         headers: { Authorization: AUTH, "content-type": "application/json" },
