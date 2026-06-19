@@ -273,18 +273,30 @@ def build_holiday_section(year):
         f'    </section>'
     )
 
-def roll_row(sym_note, active_str, next_str):
-    """Build a .th-roll-row matching the new design."""
+def roll_row(sym, label, q1_tag, q1_title, q1_detail, q2_tag, q2_title, q2_detail):
+    """Build a .th-roll-row matching the v3 CSS (3-col, accent border, no boxes)."""
     return (
         f'      <div class="th-roll-row">\n'
-        f'        <div><b>{sym_note[0]}</b><span>{sym_note[1]}</span></div>\n'
-        f'        <div><strong>{active_str[0]}</strong><span>{active_str[1]}</span></div>\n'
-        f'        <div><strong>{next_str[0]}</strong><span>{next_str[1]}</span></div>\n'
+        f'        <div class="th-roll-label"><b>{sym}</b><span>{label}</span></div>\n'
+        f'        <div class="th-roll-q">\n'
+        f'          <span class="th-roll-q-tag">{q1_tag}</span>\n'
+        f'          <strong>{q1_title}</strong>\n'
+        f'          <span>{q1_detail}</span>\n'
+        f'        </div>\n'
+        f'        <div class="th-roll-q next">\n'
+        f'          <span class="th-roll-q-tag">{q2_tag}</span>\n'
+        f'          <strong>{q2_title}</strong>\n'
+        f'          <span>{q2_detail}</span>\n'
+        f'        </div>\n'
         f'      </div>'
     )
 
 def build_rollover_section(year):
-    """Build the rollover section matching the .th-roll-board row design."""
+    """
+    Build ONLY the <section id="rollover-YEAR"> block with roll rows.
+    The outer .th-section / .th-section-head / .th-roll-board wrappers live
+    on the page and are NOT regenerated — the regex replaces just this section.
+    """
     today = datetime.date.today()
     upcoming = [m for m in QUARTER_MONTHS
                 if nth_weekday(year, m, 4, 3) >= today]
@@ -300,65 +312,81 @@ def build_rollover_section(year):
     if nqm:
         nx_exp, nx_thu, nx_fri = equity_roll(year, nqm)
         nx_code = MONTH_CODE[nqm]; nx_mn = MN[nqm-1]
-        eq_active = (f"{act_mn} {year} ({act_code}) active", f"Roll week {dfmt(act_thu)}–{act_fri.day} · Expires {dfmt_long(act_exp)}")
-        eq_next   = (f"{nx_mn} {year} ({nx_code}) next", f"Roll week {dfmt(nx_thu)}–{nx_fri.day} · Expires {dfmt_long(nx_exp)}")
+        eq_q1_tag   = f"{act_mn} {year} ({act_code}) &mdash; Active"
+        eq_q1_title = f"Roll week {dfmt(act_thu)}&ndash;{act_fri.day}"
+        eq_q1_det   = f"Expires {dfmt_long(act_exp)}"
+        eq_q2_tag   = f"{nx_mn} {year} ({nx_code}) &mdash; Next"
+        eq_q2_title = f"Roll week {dfmt(nx_thu)}&ndash;{nx_fri.day}"
+        eq_q2_det   = f"Expires {dfmt_long(nx_exp)}"
     else:
-        eq_active = (f"{act_mn} {year} ({act_code}) active", f"Roll week {dfmt(act_thu)}–{act_fri.day} · Expires {dfmt_long(act_exp)}")
-        eq_next   = ("See CME for next quarter", "")
+        eq_q1_tag = f"{act_mn} {year} ({act_code}) &mdash; Active"
+        eq_q1_title = f"Roll week {dfmt(act_thu)}&ndash;{act_fri.day}"
+        eq_q1_det = f"Expires {dfmt_long(act_exp)}"
+        eq_q2_tag = "Next quarter"; eq_q2_title = "See CME for next contract"; eq_q2_det = ""
 
     # Gold
     gc_months = gold_rollovers(year)
-    gc_active_str = " · ".join(f"{mn} last trade {dfmt_long(ltd)}" for mn, ltd in gc_months[:2])
-    gc_next_str   = f"{gc_months[2][0]} last trade {dfmt_long(gc_months[2][1])}" if len(gc_months) > 2 else "SI/HG roll ~5 days before month end"
+    gc_q1_title = " &middot; ".join(f"{mn} last trade {dfmt_long(ltd)}" for mn, ltd in gc_months[:2]) if gc_months else "See CME"
+    gc_q1_det   = "Active even months: Feb &middot; Apr &middot; Jun &middot; Aug &middot; Oct &middot; Dec"
+    gc_q2_title = f"{gc_months[2][0]} last trade {dfmt_long(gc_months[2][1])}" if len(gc_months) > 2 else "Roll ~5 biz days before month end"
+    gc_q2_det   = "Watch open interest shift on CME site &mdash; verify front month before entry"
 
     # Crude
     cl_items = crude_rollovers(year)
-    cl_active_str = " · ".join(f"CL {c} last trade {dfmt_long(ltd)}" for c, ltd in cl_items[:2]) if cl_items else "See CME"
-    cl_next_str   = " · ".join(f"CL {c} last trade {dfmt_long(ltd)}" for c, ltd in cl_items[2:4]) if len(cl_items) > 2 else "NG rolls same month, ~3 days earlier"
+    cl_q1_title = " &middot; ".join(f"CL {c} last trade {dfmt_long(ltd)}" for c, ltd in cl_items[:2]) if cl_items else "See CME"
+    cl_q1_det   = "Expires ~3 biz days before 25th of prior month"
+    cl_q2_title = " &middot; ".join(f"CL {c} last trade {dfmt_long(ltd)}" for c, ltd in cl_items[2:4]) if len(cl_items) > 2 else "NG rolls same month, ~3 days earlier"
+    cl_q2_det   = "NG rolls same month as CL, approximately 3 days earlier"
 
     # Rates
     act_ltd, act_rth, act_rfr = rates_roll(year, aqm)
     if nqm:
         nx_ltd, nx_rth, nx_rfr = rates_roll(year, nqm)
-        rt_active = (f"{act_mn} {year} ({act_code}) active", f"Roll week {dfmt(act_rth)}–{act_rfr.day} · Last trade {dfmt_long(act_ltd)}")
-        rt_next   = (f"{nx_mn} {year} ({nx_code}) next", f"Roll week {dfmt(nx_rth)}–{nx_rfr.day} · Last trade {dfmt_long(nx_ltd)}")
+        rt_q1_tag = f"{act_mn} {year} ({act_code}) &mdash; Active"
+        rt_q1_title = f"Roll week {dfmt(act_rth)}&ndash;{act_rfr.day}"
+        rt_q1_det = f"Last trade {dfmt_long(act_ltd)}"
+        rt_q2_tag = f"{nx_mn} {year} ({nx_code}) &mdash; Next"
+        rt_q2_title = f"Roll week {dfmt(nx_rth)}&ndash;{nx_rfr.day}"
+        rt_q2_det = f"Last trade {dfmt_long(nx_ltd)}"
     else:
-        rt_active = (f"{act_mn} {year} ({act_code}) active", f"Roll week {dfmt(act_rth)}–{act_rfr.day} · Last trade {dfmt_long(act_ltd)}")
-        rt_next   = ("See CME for next quarter", "")
+        rt_q1_tag = f"{act_mn} {year} ({act_code}) &mdash; Active"
+        rt_q1_title = f"Roll week {dfmt(act_rth)}&ndash;{act_rfr.day}"
+        rt_q1_det = f"Last trade {dfmt_long(act_ltd)}"
+        rt_q2_tag = "Next quarter"; rt_q2_title = "See CME"; rt_q2_det = ""
 
     # 6E
     fx_exp, fx_thu, fx_fri = fx_roll(year, aqm)
-    fx_active = (f"{act_mn} {year} ({act_code}) active", f"Roll week {dfmt(fx_thu)}–{fx_fri.day} · Expires {dfmt_long(fx_exp)}")
-    fx_next   = ("Rolls same week as equity futures", "Check broker for next quarter contract")
+    fx_q1_tag = f"{act_mn} {year} ({act_code}) &mdash; Active"
+    fx_q1_title = f"Roll week {dfmt(fx_thu)}&ndash;{fx_fri.day}"
+    fx_q1_det = f"Expires {dfmt_long(fx_exp)}"
+    fx_q2_tag = "Next quarter"; fx_q2_title = "Rolls same week as equity index futures"; fx_q2_det = "Verify expiry date with your broker"
 
     # BTC
     btc_exp, btc_thu, btc_fri = btc_roll(year, aqm)
-    btc_active = (f"{act_mn} {year} ({act_code}) active", f"Roll week {dfmt(btc_thu)}–{btc_fri.day} · Expires {dfmt_long(btc_exp)}")
-    btc_next   = ("Spot trades weekends — check Sunday CME open for gap", "")
+    btc_q1_tag = f"{act_mn} {year} ({act_code}) &mdash; Active"
+    btc_q1_title = f"Roll week {dfmt(btc_thu)}&ndash;{btc_fri.day}"
+    btc_q1_det = f"Expires {dfmt_long(btc_exp)}"
+    btc_q2_tag = "Next quarter"; btc_q2_title = "Spot trades all weekend &mdash; check Sunday CME open gap"; btc_q2_det = "Expires last Friday of delivery month"
 
     rows = [
-        roll_row(("ES · NQ · YM · RTY", "CME Equity Index — quarterly"), eq_active, eq_next),
-        roll_row(("GC · SI · HG", "COMEX Metals — monthly active months"), (gc_active_str, "Active even months: Feb, Apr, Jun, Aug, Oct, Dec"), (gc_next_str, "Watch open interest shift on CME site")),
-        roll_row(("CL · NG", "NYMEX Energy — monthly"), (cl_active_str, "Expires ~3 biz days before 25th of prior month"), (cl_next_str, "NG rolls same month as CL, ~3 days earlier")),
-        roll_row(("ZB · ZN", "CBOT Rates — quarterly"), rt_active, rt_next),
-        roll_row(("6E", "CME Euro FX — quarterly"), fx_active, fx_next),
-        roll_row(("BTC", "CME Crypto — quarterly"), btc_active, btc_next),
+        roll_row("ES &middot; NQ &middot; YM &middot; RTY", "CME Equity Index &mdash; quarterly",
+                 eq_q1_tag, eq_q1_title, eq_q1_det, eq_q2_tag, eq_q2_title, eq_q2_det),
+        roll_row("GC &middot; SI &middot; HG", "COMEX Metals &mdash; monthly active months",
+                 "GC active months", gc_q1_title, gc_q1_det, "SI &amp; HG", gc_q2_title, gc_q2_det),
+        roll_row("CL &middot; NG", "NYMEX Energy &mdash; monthly",
+                 "CL upcoming", cl_q1_title, cl_q1_det, "NG upcoming", cl_q2_title, cl_q2_det),
+        roll_row("ZB &middot; ZN", "CBOT Rates &mdash; quarterly",
+                 rt_q1_tag, rt_q1_title, rt_q1_det, rt_q2_tag, rt_q2_title, rt_q2_det),
+        roll_row("6E", "CME Euro FX &mdash; quarterly",
+                 fx_q1_tag, fx_q1_title, fx_q1_det, fx_q2_tag, fx_q2_title, fx_q2_det),
+        roll_row("BTC", "CME Crypto &mdash; quarterly",
+                 btc_q1_tag, btc_q1_title, btc_q1_det, btc_q2_tag, btc_q2_title, btc_q2_det),
     ]
 
+    # Return ONLY the <section> with rows — outer wrappers stay on the page
     return (
         f'<section id="rollover-{year}">\n'
-        f'      <div class="th-section-head">\n'
-        f'        <div>\n'
-        f'          <h2>{year} Rollover Calendar</h2>\n'
-        f'          <p class="th-intro">When volume shifts from the front-month to the next contract. '
-        f'Roll week is when open interest moves &mdash; usually the Thursday&ndash;Friday about 8 days before expiry. '
-        f'Always confirm the active contract with your broker before entering.</p>\n'
-        f'        </div>\n'
-        f'        <a href="/futures-contract-rollover/" class="th-tiny-link">Full Rollover Guide</a>\n'
-        f'      </div>\n'
-        f'      <div class="th-roll-board">\n'
         + '\n'.join(rows) + '\n'
-        f'      </div>\n'
         f'    </section>'
     )
 
