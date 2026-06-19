@@ -195,8 +195,12 @@ export default defineComponent({
       });
     }
 
+    // Elementor cache clear
     try { await fetch(`${BASE}/wp-json/elementor/v1/cache`, { method: "DELETE", headers: { Authorization: AUTH } }); } catch (e) {}
-    try { await fetch(`${BASE}/wp-admin/admin.php?page=litespeed&action=purge_all`, { headers: { Authorization: AUTH } }); } catch (e) {}
+    // LiteSpeed Cache purge — REST API (works server-side; admin.php requires browser cookies)
+    try { await fetch(`${BASE}/wp-json/litespeed/v1/purge/all`, { method: "POST", headers: { Authorization: AUTH, "content-type": "application/json" }, body: "{}" }); } catch (e) {}
+    // Fallback: also hit the admin purge URL in case the REST endpoint isn't enabled
+    try { await fetch(`${BASE}/wp-admin/admin-ajax.php`, { method: "POST", headers: { Authorization: AUTH, "content-type": "application/x-www-form-urlencoded" }, body: "action=litespeed_purge_all" }); } catch (e) {}
 
     return posted;
   }
