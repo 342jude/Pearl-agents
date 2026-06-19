@@ -135,28 +135,28 @@ def handler(pd: "pipedream"):
     # ================= (B) EVENT-RISK RADAR =================
     YEAR=datetime.now(ET).year
     EVENTS=[
-     ('CPI','Consumer Price Index','/economic-events/cpi/','HIGH',7,[(6,10),(7,14),(8,12),(9,11),(10,14),(11,10),(12,10)],(8,30)),
-     ('Jobs','Nonfarm Payrolls (jobs report)','/economic-events/nfp/','HIGH',7,[(6,5),(7,2),(8,7),(9,4),(10,2),(11,6),(12,4)],(8,30)),
-     ('FOMC','Fed rate decision','/economic-events/fomc/','HIGH',10,[(6,17),(7,29),(9,16),(10,28),(12,9)],(14,0)),
-     ('PPI','Producer Price Index','/futures-economic-calendar/','MED',5,[(6,11),(7,15),(8,13),(9,10),(10,15),(11,13),(12,15)],(8,30)),
-     ('Retail Sales','Retail Sales','/futures-economic-calendar/','MED',5,[(6,17),(7,16),(8,14),(9,16),(10,15),(11,17),(12,16)],(8,30)),
-     ('PCE','PCE inflation (Fed gauge)','/futures-economic-calendar/','MED',5,[(6,25),(7,30),(8,26),(9,30),(10,29),(11,25),(12,23)],(8,30)),
-     ('Consumer Sentiment','Consumer Sentiment (UMich, prelim)','/futures-economic-calendar/','MED',5,[(6,12),(7,10),(8,14),(9,11),(10,9),(11,13),(12,11)],(10,0)),
+     ('CPI','Consumer Price Index','/economic-events/cpi/','HIGH',35,[(6,10),(7,14),(8,12),(9,11),(10,14),(11,10),(12,10)],(8,30)),
+     ('Jobs','Nonfarm Payrolls (jobs report)','/economic-events/nfp/','HIGH',35,[(6,5),(7,2),(8,7),(9,4),(10,2),(11,6),(12,4)],(8,30)),
+     ('FOMC','Fed rate decision','/economic-events/fomc/','HIGH',50,[(6,17),(7,29),(9,16),(10,28),(12,9)],(14,0)),
+     ('PPI','Producer Price Index','/futures-economic-calendar/','MED',21,[(6,11),(7,15),(8,13),(9,10),(10,15),(11,13),(12,15)],(8,30)),
+     ('Retail Sales','Retail Sales','/futures-economic-calendar/','MED',21,[(6,17),(7,16),(8,14),(9,16),(10,15),(11,17),(12,16)],(8,30)),
+     ('PCE','PCE inflation (Fed gauge)','/futures-economic-calendar/','MED',21,[(6,25),(7,30),(8,26),(9,30),(10,29),(11,25),(12,23)],(8,30)),
+     ('Consumer Sentiment','Consumer Sentiment (UMich, prelim)','/futures-economic-calendar/','MED',21,[(6,12),(7,10),(8,14),(9,11),(10,9),(11,13),(12,11)],(10,0)),
     ]
     # LIVE source: FRED releases/dates (free, authoritative, auto-updating) with the fixed table
     # above as fallback. FRED gives the real scheduled date; we supply time + impact + link.
     FRED_MAP={
-     'Consumer Price Index':('CPI','Consumer Price Index','/economic-events/cpi/','HIGH',7,(8,30)),
-     'Employment Situation':('Jobs','Nonfarm Payrolls (jobs report)','/economic-events/nfp/','HIGH',7,(8,30)),
-     'Producer Price Index':('PPI','Producer Price Index','/futures-economic-calendar/','MED',5,(8,30)),
-     'Personal Income and Outlays':('PCE','PCE inflation (Fed gauge)','/futures-economic-calendar/','MED',5,(8,30)),
-     'Gross Domestic Product':('GDP','Gross Domestic Product','/futures-economic-calendar/','MED',5,(8,30)),
-     'Advance Monthly Sales for Retail and Food Services':('Retail Sales','Retail Sales','/futures-economic-calendar/','MED',5,(8,30)),
-     'Job Openings and Labor Turnover Survey':('JOLTS','Job Openings (JOLTS)','/futures-economic-calendar/','MED',5,(10,0)),
+     'Consumer Price Index':('CPI','Consumer Price Index','/economic-events/cpi/','HIGH',35,(8,30)),
+     'Employment Situation':('Jobs','Nonfarm Payrolls (jobs report)','/economic-events/nfp/','HIGH',35,(8,30)),
+     'Producer Price Index':('PPI','Producer Price Index','/futures-economic-calendar/','MED',21,(8,30)),
+     'Personal Income and Outlays':('PCE','PCE inflation (Fed gauge)','/futures-economic-calendar/','MED',21,(8,30)),
+     'Gross Domestic Product':('GDP','Gross Domestic Product','/futures-economic-calendar/','MED',21,(8,30)),
+     'Advance Monthly Sales for Retail and Food Services':('Retail Sales','Retail Sales','/futures-economic-calendar/','MED',21,(8,30)),
+     'Job Openings and Labor Turnover Survey':('JOLTS','Job Openings (JOLTS)','/futures-economic-calendar/','MED',21,(10,0)),
     }
     SUPP=[  # movers FRED lacks on the right date: FOMC + UMich PRELIM (FRED only has the final)
-     ('FOMC','Fed rate decision','/economic-events/fomc/','HIGH',10,[(2026,6,17),(2026,7,29),(2026,9,16),(2026,10,28),(2026,12,9)],(14,0)),
-     ('Consumer Sentiment','Consumer Sentiment (UMich, prelim)','/futures-economic-calendar/','MED',5,[(2026,6,12),(2026,7,10),(2026,8,14),(2026,9,11),(2026,10,9),(2026,11,13),(2026,12,11)],(10,0)),
+     ('FOMC','Fed rate decision','/economic-events/fomc/','HIGH',50,[(2026,6,17),(2026,7,29),(2026,9,16),(2026,10,28),(2026,12,9)],(14,0)),
+     ('Consumer Sentiment','Consumer Sentiment (UMich, prelim)','/futures-economic-calendar/','MED',21,[(2026,6,12),(2026,7,10),(2026,8,14),(2026,9,11),(2026,10,9),(2026,11,13),(2026,12,11)],(10,0)),
     ]
     def fred_candidates(now,today,key):
         u=('https://api.stlouisfed.org/fred/releases/dates?api_key=%s&file_type=json'
@@ -183,7 +183,7 @@ def handler(pd: "pipedream"):
                 dd=(dt.date()-today).days
                 if dd<=look: cc.append((dt,dd,lbl,full,href,imp))
                 break
-        cc.sort(key=lambda x:x[0]); return cc[:4]
+        cc.sort(key=lambda x:x[0]); return cc[:5]
     def table_candidates(now,today):
         last_dt=max(datetime(YEAR,mo,dy,hh,mm,tzinfo=ET) for _,_,_,_,_,ds,(hh,mm) in EVENTS for mo,dy in ds)
         if now>last_dt: return [],True
@@ -195,7 +195,7 @@ def handler(pd: "pipedream"):
                 dd=(dt.date()-today).days
                 if dd>look: continue
                 cc.append((dt,dd,lbl,full,href,imp)); break
-        cc.sort(key=lambda x:x[0]); return cc[:4],False
+        cc.sort(key=lambda x:x[0]); return cc[:5],False
     now=datetime.now(ET); today=now.date()
     FKEY=os.environ.get('FRED_API_KEY',''); STALE=False; cand=[]
     if FKEY:
