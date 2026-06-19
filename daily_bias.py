@@ -54,11 +54,26 @@ def handler(pd: "pipedream"):
     rows=[]
     for sym,sub,yf,href,dp in CON:
         try:
-            q=pull(yf,'60m','5d'); cl=[c for c in q['close'] if c is not None]
+            # 1h bars with timestamps — single pull covers MACD, H/L, and close
+            q,tsq=pullq(yf,'60m','5d'); cl=[c for c in q['close'] if c is not None]
             if len(cl)<26: continue
-            qd=pull(yf,'1d','5d'); H=qd['high'][-2]; L=qd['low'][-2]; C=qd['close'][-2]; pp=(H+L+C)/3
-            macd=[a-b for a,b in zip(ema(cl,12),ema(cl,26))]; sig=ema(macd,9)
-            mom='positive' if macd[-1]>sig[-1] else 'negative'; trend='higher' if cl[-1]>cl[-14] else 'lower'
+            # Group 1h bars by ET calendar date → true full 23h session H/L/C
+            # (replaces Yahoo daily bar which only covered 9:30am-4pm ET)
+            dmap={}
+            for _i,_t in enumerate(tsq):
+                if _t is None: continue
+                try:
+                    _ds=datetime.fromtimestamp(_t,tz=ET).strftime('%Y-%m-%d')
+                    _hi=q['high'][_i]; _lo=q['low'][_i]; _cc=q['close'][_i]
+                    if _ds not in dmap: dmap[_ds]={'H':[],'L':[],'C':[]}
+                    if _hi is not None: dmap[_ds]['H'].append(_hi)
+                    if _lo is not None: dmap[_ds]['L'].append(_lo)
+                    if _cc is not None: dmap[_ds]['C'].append(_cc)
+                except: pass
+            _today=datetime.now(ET).strftime('%Y-%m-%d')
+            _prev=[d for d in sorted(dmap,reverse=True) if d<_today and dmap[d]['H']]
+            if not _prev: continue
+            _pd=dmap[_prev[0]]; H=max(_pd['H']); L=min(_pd['L']); C=_pd['C'][-1]; pp=(H+L+C)/3
             q2,ts2=pullq(yf,'30m','5d'); tp=0; vv=0
             for i in range(len(ts2)):
                 t=ts2[i]
@@ -69,8 +84,8 @@ def handler(pd: "pipedream"):
                         tp+=((hi+lo+cc)/3)*vv2; vv+=vv2
                 except: pass
             vwap=(tp/vv) if vv else pp
-            vstate='below' if cl[-1]<vwap else 'above'   # published as STATE only, never the number
-            rows.append(dict(sym=sym,sub=sub,href=href,dp=dp,pp=pp,H=H,L=L,vwap=vwap,vstate=vstate,mom=mom,trend=trend,last=cl[-1],prev=C))
+            vstate='below' if cl[-1]<vwap else 'above'
+            rows.append(dict(sym=sym,sub=sub,href=href,dp=dp,pp=pp,H=H,L=L,vwap=vwap,vstate=vstate,last=cl[-1],prev=C))
         except Exception as e: print('skip',sym,e)
 
     hU=datetime.now(timezone.utc).hour
@@ -89,27 +104,25 @@ def handler(pd: "pipedream"):
                 'price_vs_prev_levels':_pos(r),
                 'vs_session_VWAP':'price is currently %s session VWAP'%r['vstate']} for r in rows]
         SYS=('You are the Pearl of Trades futures desk writing the %s read across the desk (ES, NQ, gold, crude, euro, bitcoin). '
-         'Your job: a clean FUNDAMENTAL read blended with the VWAP state. No specific price numbers in the narrative.\n'
+         'You blend FUNDAMENTAL drivers with TECHNICAL levels (prev-session full H/L/Pivot and session-VWAP state).\n'
          'CRITICAL RULES:\n'
-         '1. DIRECTION must follow price_vs_prev_levels. '
-         '"above resistance" = Bullish lean. '
-         '"above pivot, below resistance" = Neutral or Bullish lean. '
-         '"below pivot, above support" = Neutral or Bearish lean. '
-         '"below support" = Bearish lean. Do NOT override this with macro alone.\n'
-         '2. NEVER write any specific price number in the read or flip. No "7486", no "above X". The levels shown in the header are reference-only and may not match the trader\'s chart.\n'
-         '3. NEVER name any indicator (MACD, RSI, stochastic, etc.).\n'
-         '4. VWAP: write "above VWAP" or "below VWAP" only — never a price number.\n'
-         '5. Write about the MACRO DRIVER and the VWAP/price-position interplay. Conditions like "while buyers hold above session VWAP" or "a close back below VWAP would flip the lean".\n'
+         '1. DIRECTION must follow price_vs_prev_levels: '
+         '"above resistance" → Bullish lean. '
+         '"above pivot, below resistance" → Neutral or Bullish lean. '
+         '"below pivot, above support" → Neutral or Bearish lean. '
+         '"below support" → Bearish lean. Never override with macro alone.\n'
+         '2. NEVER name any indicator (MACD, RSI, stochastic, etc.) — you have no live chart feed.\n'
+         '3. VWAP: write "above VWAP" or "below VWAP" — never a VWAP price number.\n'
+         '4. You may reference prev_session_pivot/resistance/support numbers in CONDITIONAL rules only: '
+         '"while price holds above [pivot]" or "a break below [support] opens...". Never state current price.\n'
          'Return STRICT JSON {"market_context":"...","items":[{"symbol","direction","driver","read","flip"}]}:\n'
-         '- market_context: 2 sentences on the macro backdrop driving the desk today.\n'
+         '- market_context: 2 sentences on the macro backdrop.\n'
          '- direction: "Bullish lean" | "Bearish lean" | "Neutral" — must match price_vs_prev_levels.\n'
          '- driver: 3-7 word fundamental driver.\n'
-         '- read: 1-2 sentences. Blend the macro driver with the VWAP state and general directional posture. No price numbers. '
-         'Example: "Soft landing hopes lifted risk; with price above VWAP, buyers are in control — but profit-taking is likely into any gap-fill attempt." '
-         'Example: "Yield pressure continues; while price sits below VWAP, sellers hold the initiative into the London close."\n'
-         '- flip: 1 sentence, plain English, no price numbers, no word "invalidation". '
-         'Example: "A sustained move back below VWAP would shift the lean to neutral." '
-         'Example: "A hold above VWAP into the NY open would confirm the bullish lean."\n'
+         '- read: 1-2 sentences. Blend driver + VWAP state + a level-based condition using the actual numbers. '
+         'Example: "Risk appetite is firm; with price above VWAP, buyers hold the initiative — the prev pivot is the first level to hold on any dip."\n'
+         '- flip: 1 sentence, plain English, may use a level number, no word "invalidation". '
+         'Example: "A close back below the prev pivot and VWAP would flip the lean to neutral."\n'
          'Output JSON only.')%SESS
         body=json.dumps({'model':MODEL,'max_tokens':2400,'system':SYS,'messages':[{'role':'user','content':json.dumps({'items':items})}]}).encode()
         rq=urllib.request.Request('https://api.anthropic.com/v1/messages',data=body,headers={'x-api-key':KEY,'anthropic-version':'2023-06-01','content-type':'application/json'})
@@ -121,7 +134,8 @@ def handler(pd: "pipedream"):
             x=R.get(r['sym'],{}); dn=x.get('direction','Neutral'); col,bg,ar=CFG.get(dn.split()[0],CFG['Neutral'])
             def Lc(lbl,val): return '<span style="white-space:nowrap;"><span style="color:#9AA6B6;">%s</span> <b style="color:#0B1F3A;">%s</b></span>'%(lbl,val)
             vchip=('&#9660;&nbsp;below' if r['vstate']=='below' else '&#9650;&nbsp;above')
-            rail=Lc('VWAP',vchip)+'<span style="display:block;font-size:10px;color:#9AA6B6;margin-top:3px;">Session VWAP state only &mdash; use your live chart for S/R levels</span>'
+            rail=(' &nbsp;&middot;&nbsp; '.join([Lc('Prev S',f(r['L'],r['dp'])),Lc('Prev Pivot',f(r['pp'],r['dp'])),Lc('Prev R',f(r['H'],r['dp'])),Lc('VWAP',vchip)])
+                  +'<span style="display:block;font-size:10px;color:#9AA6B6;margin-top:3px;">Prev full-session H/L/Pivot &mdash; verify on your live chart</span>')
             return ('<div style="border:1px solid #E7EBF1;border-radius:14px;background:#fff;overflow:hidden;box-shadow:0 12px 30px rgba(7,26,47,.06);">'
               '<div style="height:4px;background:%s;"></div>'
               '<div style="padding:17px;display:flex;flex-direction:column;gap:11px;">'
