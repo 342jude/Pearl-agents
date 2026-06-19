@@ -32,7 +32,7 @@ export default defineComponent({
           if (!isNaN(pts) && (Date.now() - pts) > 3 * 24 * 60 * 60 * 1000) continue; // drop stale
           arr.push({ title: (it.title || "").trim(), source: f.title || url, link, published: pub, snippet: (it.contentSnippet || "").slice(0, 280) });
         }
-      } catch (e) { /* skip a slow feed */ }
+      } catch (e) { console.warn(`feed failed [${url}]: ${e.message}`); }
       perFeed.push(arr);
     }
     // round-robin merge: item 0 of each feed, then item 1 of each, ... so every feed gets a fair seat
