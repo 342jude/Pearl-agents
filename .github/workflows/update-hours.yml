@@ -1,0 +1,26 @@
+name: Update Trading Hours Page
+
+on:
+  schedule:
+    - cron: '0 14 2 1 *'   # Jan 2 at 9:00 AM ET (14:00 UTC)
+  workflow_dispatch: {}      # manual run any time
+
+concurrency:
+  group: update-hours
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Update Trading Hours Page
+        run: python update_hours_page.py
+        env:
+          WP_BASE:     ${{ secrets.WP_BASE }}
+          WP_USER:     ${{ secrets.WP_USER }}
+          WP_APP_PASS: ${{ secrets.WP_APP_PASS }}
